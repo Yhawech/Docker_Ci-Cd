@@ -5,7 +5,7 @@ FROM httpd:2.4
 WORKDIR /usr/local/apache2/htdocs/
 
 # Step 3: Copy your website files (index.html and others if needed)
-COPY * /usr/local/apache2/htdocs/
+COPY ./htdocs/ /usr/local/apache2/htdocs/
 
 # (Optional) – If you have a full website folder, use:
 # COPY ./website/ /usr/local/apache2/htdocs/
