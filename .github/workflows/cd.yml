@@ -2,12 +2,13 @@ name: CD - Deploy to EC2
 
 on:
   workflow_run:
-    workflows: ["CI - Build & Push Docker Image"]
+    workflows: ["CI - Build & Push Docker Image"]   # exactly the CI workflow name
     types:
       - completed
 
 jobs:
   deploy:
+    # only run the deploy job when CI succeeded
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
 
@@ -21,26 +22,9 @@ jobs:
           script: |
             IMAGE=${{ secrets.DOCKER_USERNAME }}/myapp
             TAG=${{ github.event.workflow_run.head_sha }}
-
-            # Install dependencies
             sudo apt-get update -y
             sudo apt-get install -y docker.io apache2
-
-            # Run container on port 8080
             sudo docker rm -f myapp || true
             sudo docker pull $IMAGE:$TAG
             sudo docker run -d --name myapp -p 8080:80 $IMAGE:$TAG
-
-            # Configure Apache as reverse proxy
-            sudo a2enmod proxy
-            sudo a2enmod proxy_http
-            sudo bash -c 'cat > /etc/apache2/sites-available/000-default.conf <<EOF
-            <VirtualHost *:80>
-                ServerAdmin webmaster@localhost
-                ProxyPass / http://127.0.0.1:8080/
-                ProxyPassReverse / http://127.0.0.1:8080/
-            </VirtualHost>
-EOF'
-
-            # Restart Apache
             sudo systemctl restart apache2
