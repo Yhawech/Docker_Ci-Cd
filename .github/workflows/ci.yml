@@ -1,28 +1,46 @@
-name: CI - Build & Push Docker Image
+name: CD - Deploy to EC2
 
 on:
-  push:
-    branches:
-      - main
+  workflow_run:
+    workflows: ["CI - Build & Push Docker Image"]
+    types:
+      - completed
 
 jobs:
-  build:
+  deploy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v3
-
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v2
+      - name: Deploy via SSH to EC2
+        uses: appleboy/ssh-action@v0.1.7
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          host: ${{ secrets.HOST_DNS }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            IMAGE=${{ secrets.DOCKER_USERNAME }}/myapp
+            TAG=${{ github.event.workflow_run.head_sha }}
 
-      - name: Build and push image (sha + latest)
-        env:
-          IMAGE: ${{ secrets.DOCKER_USERNAME }}/myapp
-          TAG: ${{ github.sha }}
-        run: |
-          docker build -t $IMAGE:latest -t $IMAGE:$TAG .
-          docker push $IMAGE:$TAG
-          docker push $IMAGE:latest
+            # Install dependencies
+            sudo apt-get update -y
+            sudo apt-get install -y docker.io apache2
 
+            # Run container on port 8080
+            sudo docker rm -f myapp || true
+            sudo docker pull $IMAGE:$TAG
+            sudo docker run -d --name myapp -p 8080:80 $IMAGE:$TAG
+
+            # Configure Apache as reverse proxy
+            sudo a2enmod proxy
+            sudo a2enmod proxy_http
+            sudo bash -c 'cat > /etc/apache2/sites-available/000-default.conf <<EOF
+            <VirtualHost *:80>
+                ServerAdmin webmaster@localhost
+                ProxyPass / http://127.0.0.1:8080/
+                ProxyPassReverse / http://127.0.0.1:8080/
+            </VirtualHost>
+EOF'
+
+            # Restart Apache
+            sudo systemctl restart apache2
